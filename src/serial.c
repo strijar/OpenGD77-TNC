@@ -11,10 +11,12 @@
 #include <unistd.h>
 #include <termios.h>
 #include <pthread.h>
+#include <string.h>
 
 #include "serial.h"
 #include "dmr.h"
 #include "util.h"
+#include "cap.h"
 
 #define FRAME       0xE0
 
@@ -31,10 +33,14 @@ typedef enum {
     STATE_NEED_INIT = 0,
     STATE_SET_FREQ,
     STATE_READY,
+    STATE_SEND_DATA,
+    STATE_GET_STATUS,
+    STATE_DONE
 } state_t;
 
 static int      fd;
 static state_t  state = STATE_NEED_INIT;
+static uint8_t  free_buffers = 0;
 
 static void send_get_status() {
     uint8_t cmd[] = { FRAME, 3, GET_STATUS };
@@ -58,6 +64,36 @@ static void send_set_freq(uint32_t rx, uint32_t tx) {
     write(fd, cmd, sizeof(cmd));
 }
 
+static void send_data2(uint8_t *data, size_t size) {
+    uint8_t cmd[3 + size];
+
+    cmd[0] = FRAME;
+    cmd[1] = size + 3;
+    cmd[2] = DMR_DATA2;
+
+    memcpy(&cmd[3], data, size);
+    write(fd, cmd, sizeof(cmd));
+
+    dump("Send", cmd, sizeof(cmd));
+}
+
+static void next_data() {
+    uint8_t buf[256];
+
+    if (free_buffers < 20) {
+        return;
+    }
+
+    if (cap_read(buf, 34)) {
+        send_data2(buf, 34);
+        state = STATE_SEND_DATA;
+    } else {
+        printf("Done\n");
+        cap_close();
+        state = STATE_DONE;
+    }
+}
+
 static void * serial_worker(void *p) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
@@ -68,7 +104,6 @@ static void * serial_worker(void *p) {
         int n = read(fd, &buf, sizeof(buf));
 
         if (n > 0) {
-
             if (buf[0] != FRAME || buf[1] != n) {
                 continue;
             }
@@ -79,6 +114,11 @@ static void * serial_worker(void *p) {
                         case SET_FREQ:
                             printf("Set freq: Ok\n");
                             state = STATE_READY;
+                            break;
+
+                        case DMR_DATA2:
+                            send_get_status();
+                            state = STATE_GET_STATUS;
                             break;
 
                         default:
@@ -92,16 +132,36 @@ static void * serial_worker(void *p) {
                             printf("Set freq: Error %i\n", buf[4]);
                             break;
 
+                        case DMR_DATA2:
+                            printf("Send data: Error %i\n", buf[4]);
+                            state = STATE_DONE;
+                            break;
+
                         default:
                             break;
                     }
                     break;
 
                 case GET_STATUS:
+                    free_buffers = buf[8];
+
                     switch (state) {
                         case STATE_NEED_INIT:
                             send_set_freq(446003120, 446003120);
                             state = STATE_SET_FREQ;
+                            break;
+
+                        case STATE_READY:
+                            if (false) {
+                                state = STATE_DONE;
+                            } else {
+                                cap_open(false);
+                                next_data();
+                            }
+                            break;
+
+                        case STATE_GET_STATUS:
+                            next_data();
                             break;
 
                         default:
@@ -158,7 +218,7 @@ bool serial_init() {
     tty.c_oflag &= ~ONLCR;              /* Prevent conversion of newline to carriage return/line feed */
 
     tty.c_cc[VMIN] = 0;                 /* Minimum number of characters to read */
-    tty.c_cc[VTIME] = 5;                /* Timeout in 0.1s units (5 units = 0.5 seconds) */
+    tty.c_cc[VTIME] = 2;                /* Timeout in 0.1s units (5 units = 0.5 seconds) */
 
     if (tcsetattr(fd, TCSANOW, &tty) != 0) {
         return false;

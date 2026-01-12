@@ -10,6 +10,7 @@
 
 #include "dmr.h"
 #include "util.h"
+#include "cap.h"
 
 #define DMR_SYNC_DATA           0x40U
 #define DT_VOICE_LC_HEADER      0x01U
@@ -31,20 +32,24 @@ void dmr_data(uint8_t *data, size_t size) {
 
     uint8_t type = data[0];
 
-    data++;
-    size--;
-
     if (type & DMR_SYNC_DATA) {
         if (type & DT_VOICE_LC_HEADER) {
             dump("Start", data, size);
             lc_header_decode(data, size);
+
+            cap_open(true);
+            cap_write(data, size);
         }
 
         if (type & DT_TERMINATOR_WITH_LC) {
             dump("End  ", data, size);
             printf("\n");
+
+            cap_write(data, size);
+            cap_close();
         }
     } else {
         dump("Pack ", data, size);
+        cap_write(data, size);
     }
 }
