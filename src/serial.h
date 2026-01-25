@@ -13,3 +13,4 @@
 #include <stdbool.h>
 
 bool serial_init();
+void serial_send(uint8_t *data, size_t size);

@@ -14,8 +14,10 @@
 
 static int fd;
 
-void cap_open(bool create) {
+bool cap_open(bool create) {
     fd = open("cap.dat", create ? O_WRONLY | O_CREAT : O_RDONLY, 0644);
+
+    return fd > 0;
 }
 
 void cap_close() {

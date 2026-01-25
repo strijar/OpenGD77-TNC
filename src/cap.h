@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void cap_open(bool create);
+bool cap_open(bool create);
 void cap_close();
 
 void cap_write(uint8_t *data, size_t size);

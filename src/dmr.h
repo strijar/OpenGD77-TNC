@@ -12,4 +12,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void dmr_data(uint8_t *data, size_t size);
+typedef enum {
+    DMR_UNKNOWN = 0,
+    DMR_DATA_START,
+    DMR_DATA_PROCESS,
+    DMR_DATA_END
+} dmr_state_t;
+
+dmr_state_t dmr_recv(uint8_t *data, size_t size);
+void dmr_send(uint8_t *data, size_t size);
